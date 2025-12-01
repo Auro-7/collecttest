@@ -28,124 +28,121 @@
 const buildsPerPage = 10;
 let currentPage = 1;
 let allBuilds = [];
+let romFiles = [];
 
-const BASE_URL = "https://github.com/Auro-7/famidash-collection/content/";
+const RAW_INFO_URL = "https://raw.githubusercontent.com/Auro-7/famidash-collection/main/info.ini";
+const GITHUB_CONTENT_URL = "https://api.github.com/repos/Auro-7/famidash-collection/contents";
 
-// Fetch info.ini and parse sections
+// Fetch ROM filenames from GitHub
+async function fetchRomFiles() {
+  const res = await fetch(GITHUB_CONTENT_URL);
+  const files = await res.json();
+  romFiles = files.filter(f => f.name.endsWith('.nes')).map(f => f.name);
+}
+
+// Parse info.ini
 async function fetchBuilds() {
-  try {
-    const res = await fetch('https://raw.githubusercontent.com/Auro-7/famidash-collection/main/info.ini');
-    const text = await res.text();
+  await fetchRomFiles();
 
-    const lines = text.split('\n');
-    let currentTitle = null;
-    let currentEntry = null;
+  const res = await fetch(RAW_INFO_URL);
+  const text = await res.text();
 
-    allBuilds = [];
+  const lines = text.split('\n');
+  let currentEntry = null;
+  allBuilds = [];
 
-    for (let line of lines) {
-      line = line.trim();
-      if (!line || line.startsWith('#')) continue;
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;
 
-      const sectionMatch = line.match(/^\[(.+?)\]$/);
-      if (sectionMatch) {
-        // New section / title
-        if (currentEntry) allBuilds.push(currentEntry);
-        currentTitle = sectionMatch[1];
-        currentEntry = { title: currentTitle };
-        continue;
-      }
-
-      // Parse key=value
-      const kv = line.split('=');
-      if (kv.length === 2 && currentEntry) {
-        const key = kv[0].trim();
-        const value = kv[1].trim().replace(/^"|"$/g, '');
-        currentEntry[key] = value;
-      }
+    const sectionMatch = line.match(/^\[(.+?)\]$/);
+    if (sectionMatch) {
+      if (currentEntry) allBuilds.push(currentEntry);
+      currentEntry = { title: sectionMatch[1] };
+      continue;
     }
-    if (currentEntry) allBuilds.push(currentEntry); // push last entry
 
-    // Build URLs and commit segments
-    allBuilds = allBuilds.map(build => {
-      let filename, commitSegment;
-      const titleSegment = build.title.replace(/\s+/g, '-');
-
-      if (build.uv3 === 'true') {
-        // Contest/UV3 ROM → starts with "contest"
-        filename = `contest.famidash.${build.commit_name.replace(/\s+/g,'-')}.nes`;
-      } else {
-        // Regular build → starts with section title
-        filename = `${titleSegment}.famidash.${build.commit_name.replace(/\s+/g,'-')}.nes`;
-      }
-
-      commitSegment = filename.split('.')[2]; // segment 3 is commit
-
-      return {
-        number: build.id || '-', // optional, can exist in info.ini
-        tag: build.uv3 === 'true' ? 'uv3' : 'famidash',
-        display_name: build.title || 'Unknown build',
-        date: build.date || '-',
-        commit: commitSegment,
-        url: BASE_URL + filename
-      };
-    });
-
-  } catch (e) {
-    console.error("Failed to fetch info.ini", e);
-    allBuilds = [];
+    const kv = line.split('=');
+    if (kv.length === 2 && currentEntry) {
+      const key = kv[0].trim();
+      const value = kv[1].trim().replace(/^"|"$/g, '');
+      currentEntry[key] = value;
+    }
   }
+  if (currentEntry) allBuilds.push(currentEntry);
+
+  // Assign ROM to each entry
+  const assignedRoms = new Set();
+  allBuilds = allBuilds.map(entry => {
+    let matched = null;
+
+    // UV3 entries → match by segment 3
+    if (entry.uv3 === 'true') {
+      matched = romFiles.find(f => {
+        const segments = f.split('.');
+        return segments[2] && !assignedRoms.has(f);
+      });
+    } else {
+      // Regular builds → match the first unassigned ROM
+      matched = romFiles.find(f => !assignedRoms.has(f));
+    }
+
+    if (matched) assignedRoms.add(matched);
+
+    return {
+      display_name: entry.title,
+      date: entry.date || '-',
+      url: matched ? `https://raw.githubusercontent.com/Auro-7/famidash-collection/main/${matched}` : '#',
+      commit: matched ? matched.split('.')[2] || '-' : '-'
+    };
+  });
 
   renderPage(currentPage);
 }
 
-// Render paginated page
+// Render page
 function renderPage(page) {
-  const list = document.getElementById("build-list");
-  list.innerHTML = "";
+  const list = document.getElementById('build-list');
+  list.innerHTML = '';
   const start = (page - 1) * buildsPerPage;
   const end = start + buildsPerPage;
   const pageBuilds = allBuilds.slice(start, end);
 
   pageBuilds.forEach(build => {
-    const li = document.createElement("li");
-    li.className = "build-row";
+    const li = document.createElement('li');
+    li.className = 'build-row';
 
-    const info = document.createElement("div");
-    info.className = "build-info";
+    const info = document.createElement('div');
+    info.className = 'build-info';
 
-    const num = document.createElement("span"); num.textContent = build.number;
-    const tag = document.createElement("span"); tag.textContent = build.tag;
-    const commit = document.createElement("span"); commit.textContent = build.commit;
-    const date = document.createElement("span"); date.textContent = build.date;
-    const name = document.createElement("span"); name.textContent = build.display_name;
+    const name = document.createElement('span'); name.textContent = build.display_name;
+    const date = document.createElement('span'); date.textContent = build.date;
+    const commit = document.createElement('span'); commit.textContent = build.commit;
 
-    info.appendChild(num);
-    info.appendChild(tag);
-    info.appendChild(commit);
-    info.appendChild(date);
     info.appendChild(name);
+    info.appendChild(date);
+    info.appendChild(commit);
 
-    const link = document.createElement("a");
-    link.className = "save-button";
+    const link = document.createElement('a');
+    link.className = 'save-button';
     link.href = build.url;
     link.setAttribute('download', '');
-    link.textContent = "💾"; // floppy disk emoji
+    link.textContent = '💾';
 
     li.appendChild(info);
     li.appendChild(link);
     list.appendChild(li);
   });
 
-  document.getElementById("page-info").textContent =
+  document.getElementById('page-info').textContent =
     `Page ${currentPage} of ${Math.ceil(allBuilds.length / buildsPerPage)}`;
 }
 
-// Pagination buttons
-document.getElementById("prev-page").addEventListener("click", () => {
+// Pagination
+document.getElementById('prev-page').addEventListener('click', () => {
   if (currentPage > 1) { currentPage--; renderPage(currentPage); }
 });
-document.getElementById("next-page").addEventListener("click", () => {
+document.getElementById('next-page').addEventListener('click', () => {
   if (currentPage < Math.ceil(allBuilds.length / buildsPerPage)) { currentPage++; renderPage(currentPage); }
 });
 
