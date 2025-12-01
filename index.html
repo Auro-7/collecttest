@@ -29,12 +29,12 @@ const buildsPerPage = 10;
 let currentPage = 1;
 let allBuilds = [];
 
-const BASE_URL = "https://github.com/Auro-7/famidash-collection/raw/main/";
+const BASE_URL = "https://github.com/Auro-7/famidash-collection/content/";
 
 // Fetch info.ini and parse sections
 async function fetchBuilds() {
   try {
-    const res = await fetch(BASE_URL + 'info.ini');
+    const res = await fetch('https://raw.githubusercontent.com/Auro-7/famidash-collection/main/info.ini');
     const text = await res.text();
 
     const lines = text.split('\n');
