@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Famidash Builds</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  #build-list { list-style: none; padding: 0; }
+  .build-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #ccc; }
+  .build-info span { margin-right: 10px; }
+  .save-button { text-decoration: none; font-size: 16px; }
+  #pagination { margin-top: 10px; }
+  button { margin: 0 5px; }
+</style>
+</head>
+<body>
+
+<h1>Famidash Builds</h1>
+<ul id="build-list"></ul>
+
+<div id="pagination">
+  <button id="prev-page">Prev</button>
+  <span id="page-info"></span>
+  <button id="next-page">Next</button>
+</div>
+
+<script>
+const buildsPerPage = 10;
+let currentPage = 1;
+let allBuilds = [];
+
+const BASE_URL = "https://github.com/Auro-7/famidash-collection/raw/main/";
+
+// Fetch info.ini and parse sections
+async function fetchBuilds() {
+  try {
+    const res = await fetch(BASE_URL + 'info.ini');
+    const text = await res.text();
+
+    const lines = text.split('\n');
+    let currentTitle = null;
+    let currentEntry = null;
+
+    allBuilds = [];
+
+    for (let line of lines) {
+      line = line.trim();
+      if (!line || line.startsWith('#')) continue;
+
+      const sectionMatch = line.match(/^\[(.+?)\]$/);
+      if (sectionMatch) {
+        // New section / title
+        if (currentEntry) allBuilds.push(currentEntry);
+        currentTitle = sectionMatch[1];
+        currentEntry = { title: currentTitle };
+        continue;
+      }
+
+      // Parse key=value
+      const kv = line.split('=');
+      if (kv.length === 2 && currentEntry) {
+        const key = kv[0].trim();
+        const value = kv[1].trim().replace(/^"|"$/g, '');
+        currentEntry[key] = value;
+      }
+    }
+    if (currentEntry) allBuilds.push(currentEntry); // push last entry
+
+    // Build URLs and commit segments
+    allBuilds = allBuilds.map(build => {
+      let filename, commitSegment;
+      const titleSegment = build.title.replace(/\s+/g, '-');
+
+      if (build.uv3 === 'true') {
+        // Contest/UV3 ROM → starts with "contest"
+        filename = `contest.famidash.${build.commit_name.replace(/\s+/g,'-')}.nes`;
+      } else {
+        // Regular build → starts with section title
+        filename = `${titleSegment}.famidash.${build.commit_name.replace(/\s+/g,'-')}.nes`;
+      }
+
+      commitSegment = filename.split('.')[2]; // segment 3 is commit
+
+      return {
+        number: build.id || '-', // optional, can exist in info.ini
+        tag: build.uv3 === 'true' ? 'uv3' : 'famidash',
+        display_name: build.title || 'Unknown build',
+        date: build.date || '-',
+        commit: commitSegment,
+        url: BASE_URL + filename
+      };
+    });
+
+  } catch (e) {
+    console.error("Failed to fetch info.ini", e);
+    allBuilds = [];
+  }
+
+  renderPage(currentPage);
+}
+
+// Render paginated page
+function renderPage(page) {
+  const list = document.getElementById("build-list");
+  list.innerHTML = "";
+  const start = (page - 1) * buildsPerPage;
+  const end = start + buildsPerPage;
+  const pageBuilds = allBuilds.slice(start, end);
+
+  pageBuilds.forEach(build => {
+    const li = document.createElement("li");
+    li.className = "build-row";
+
+    const info = document.createElement("div");
+    info.className = "build-info";
+
+    const num = document.createElement("span"); num.textContent = build.number;
+    const tag = document.createElement("span"); tag.textContent = build.tag;
+    const commit = document.createElement("span"); commit.textContent = build.commit;
+    const date = document.createElement("span"); date.textContent = build.date;
+    const name = document.createElement("span"); name.textContent = build.display_name;
+
+    info.appendChild(num);
+    info.appendChild(tag);
+    info.appendChild(commit);
+    info.appendChild(date);
+    info.appendChild(name);
+
+    const link = document.createElement("a");
+    link.className = "save-button";
+    link.href = build.url;
+    link.setAttribute('download', '');
+    link.textContent = "💾"; // floppy disk emoji
+
+    li.appendChild(info);
+    li.appendChild(link);
+    list.appendChild(li);
+  });
+
+  document.getElementById("page-info").textContent =
+    `Page ${currentPage} of ${Math.ceil(allBuilds.length / buildsPerPage)}`;
+}
+
+// Pagination buttons
+document.getElementById("prev-page").addEventListener("click", () => {
+  if (currentPage > 1) { currentPage--; renderPage(currentPage); }
+});
+document.getElementById("next-page").addEventListener("click", () => {
+  if (currentPage < Math.ceil(allBuilds.length / buildsPerPage)) { currentPage++; renderPage(currentPage); }
+});
+
+// Initial fetch
+fetchBuilds();
+</script>
+
+</body>
+</html>
